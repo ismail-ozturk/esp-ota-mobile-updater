@@ -5,8 +5,6 @@ workflows:
     max_build_duration: 60
     working_directory: ESPOTAUpdater
     environment:
-      groups:
-        - app_store_credentials
       vars:
         XCODE_WORKSPACE: "ESPOTAUpdater.xcworkspace"
         XCODE_SCHEME: "ESPOTAUpdater"
@@ -28,9 +26,7 @@ workflows:
             --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
-    publishing:
-      app_store_connect:
-        auth: integration
+    # publishing bölümünü şimdilik kaldırdık
 
   android-workflow:
     name: Android ESP OTA Updater
@@ -38,8 +34,6 @@ workflows:
     max_build_duration: 60
     working_directory: ESPOTAUpdater
     environment:
-      groups:
-        - google_play
       vars:
         PACKAGE_NAME: "com.yourname.espotaupdater"
       node: 18.17.0
@@ -54,7 +48,3 @@ workflows:
           ./gradlew assembleDebug
     artifacts:
       - ESPOTAUpdater/android/app/build/outputs/**/*.apk
-    publishing:
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-        track: internal
