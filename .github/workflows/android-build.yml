@@ -78,9 +78,24 @@ jobs:
         cd ESPOTAUpdater/android
         ./gradlew clean
         
+    - name: Create assets directory
+      run: |
+        mkdir -p ESPOTAUpdater/android/app/src/main/assets
+        
+    - name: Generate React Native bundle
+      run: |
+        cd ESPOTAUpdater
+        npx react-native bundle \
+          --platform android \
+          --dev false \
+          --entry-file index.js \
+          --bundle-output android/app/src/main/assets/index.android.bundle \
+          --assets-dest android/app/src/main/res
+        
     - name: Build Debug APK
       run: |
         cd ESPOTAUpdater/android
+        ./gradlew clean
         ./gradlew assembleDebug
         
     - name: List APK files
