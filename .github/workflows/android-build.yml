@@ -26,6 +26,8 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
+        cache-dependency-path: 'ESPOTAUpdater/package-lock.json'  # Bu satırı ekleyin
+
         
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
