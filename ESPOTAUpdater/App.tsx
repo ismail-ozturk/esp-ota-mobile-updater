@@ -10,14 +10,21 @@ import {
   SafeAreaView,
   Platform,
 } from 'react-native';
-import DocumentPicker from 'react-native-document-picker';
+import DocumentPicker, { DocumentPickerResponse } from 'react-native-document-picker';
 import ESPOTAService from './src/services/ESPOTAService';
+
+interface SelectedFile {
+  uri: string;
+  name: string;
+  size: number;
+  type?: string;
+}
 
 const App: React.FC = () => {
   const [espIP, setEspIP] = useState<string>('192.168.1.100');
   const [espPort, setEspPort] = useState<string>('3232');
   const [password, setPassword] = useState<string>('');
-  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
@@ -32,26 +39,40 @@ const App: React.FC = () => {
     try {
       const result = await DocumentPicker.pick({
         type: [DocumentPicker.types.allFiles],
+        allowMultiSelection: false,
       });
       
       const selectedFile = result[0];
       
+      // Null kontrolü ve optional chaining
       if (!selectedFile || !selectedFile.name || !selectedFile.size) {
         Alert.alert('Error', 'Invalid file selected');
+        addLog('❌ Invalid file selected');
         return;
       }
       
+      // .bin dosyası kontrolü
       if (selectedFile.name.endsWith('.bin')) {
-        setSelectedFile(selectedFile);
+        const fileData: SelectedFile = {
+          uri: selectedFile.uri,
+          name: selectedFile.name,
+          size: selectedFile.size,
+          type: selectedFile.type || 'application/octet-stream'
+        };
+        
+        setSelectedFile(fileData);
         addLog(`✅ File selected: ${selectedFile.name} (${Math.round(selectedFile.size / 1024)} KB)`);
       } else {
         Alert.alert('Error', 'Please select a .bin firmware file');
-        addLog('❌ Invalid file type selected');
+        addLog('❌ Invalid file type selected - .bin required');
       }
     } catch (err) {
-      if (!DocumentPicker.isCancel(err)) {
+      if (DocumentPicker.isCancel(err)) {
+        addLog('📁 File selection cancelled');
+      } else {
         console.error('File picker error:', err);
         Alert.alert('Error', 'Could not select file');
+        addLog(`❌ File picker error: ${err}`);
       }
     }
   };
@@ -73,7 +94,7 @@ const App: React.FC = () => {
         Alert.alert('Success', 'ESP device is reachable and responding');
       } else {
         addLog('❌ Connection test failed');
-        Alert.alert('Failed', 'Could not connect to ESP device');
+        Alert.alert('Failed', 'Could not connect to ESP device\n\nCheck:\n• ESP is powered on\n• WiFi connection\n• IP address is correct\n• ArduinoOTA is running');
       }
     } catch (error: any) {
       addLog(`❌ Connection test error: ${error.message}`);
@@ -98,11 +119,16 @@ const App: React.FC = () => {
     setUploadProgress(0);
     setLogs([]);
     addLog('🚀 Starting ESP OTA upload...');
+    addLog(`🎯 Target: ${espIP}:${espPort}`);
+    addLog(`📁 File: ${selectedFile.name}`);
+    addLog(`📏 Size: ${Math.round(selectedFile.size / 1024)} KB`);
 
+    // Progress callback ayarla
     ESPOTAService.setProgressCallback((progress: number) => {
       setUploadProgress(progress);
     });
 
+    // Log callback ayarla
     ESPOTAService.setLogCallback((message: string) => {
       addLog(message);
     });
@@ -116,10 +142,26 @@ const App: React.FC = () => {
       );
       
       addLog('🎉 Firmware uploaded successfully!');
-      Alert.alert('Success', 'Firmware uploaded successfully!\nESP device should restart now.');
+      addLog(`✅ Result: ${result.message}`);
+      if (result.fileSize) {
+        addLog(`📏 Uploaded: ${result.fileSize} bytes`);
+      }
+      if (result.fileMD5) {
+        addLog(`🔐 MD5: ${result.fileMD5}`);
+      }
+      
+      Alert.alert(
+        'Upload Successful! 🎉', 
+        `Firmware uploaded successfully!\n\nFile: ${selectedFile.name}\nSize: ${Math.round(selectedFile.size / 1024)} KB\n\nESP device should restart automatically with the new firmware.`,
+        [{ text: 'OK', style: 'default' }]
+      );
     } catch (error: any) {
       addLog(`❌ Upload error: ${error.message}`);
-      Alert.alert('Upload Failed', `Error: ${error.message}`);
+      Alert.alert(
+        'Upload Failed ❌', 
+        `Error: ${error.message}\n\nTroubleshooting:\n• Check ESP WiFi connection\n• Verify IP address is correct\n• Ensure ArduinoOTA is running\n• Check if file is valid .bin firmware\n• Try restarting ESP device`,
+        [{ text: 'OK', style: 'default' }]
+      );
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -131,14 +173,37 @@ const App: React.FC = () => {
     addLog('🧹 Logs cleared');
   };
 
+  const showFileInfo = (): void => {
+    if (selectedFile) {
+      Alert.alert(
+        'File Information 📄',
+        `Name: ${selectedFile.name}\n\nSize: ${Math.round(selectedFile.size / 1024)} KB (${selectedFile.size} bytes)\n\nType: ${selectedFile.type}\n\nPath: ${selectedFile.uri}`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const showNetworkInfo = (): void => {
+    Alert.alert(
+      'Network Information 🌐',
+      `ESP IP: ${espIP}\nPort: ${espPort}\nProtocol: UDP + TCP\n\nMake sure your mobile device and ESP are on the same WiFi network.`,
+      [{ text: 'OK' }]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>🚀 ESP OTA Updater</Text>
-        <Text style={styles.subtitle}>Mobile Firmware Uploader</Text>
+        <Text style={styles.subtitle}>Over-The-Air Firmware Uploader</Text>
         
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔧 ESP Configuration</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>🔧 ESP Device Configuration</Text>
+            <TouchableOpacity onPress={showNetworkInfo} style={styles.infoButton}>
+              <Text style={styles.infoButtonText}>ℹ️</Text>
+            </TouchableOpacity>
+          </View>
           
           <View style={styles.inputContainer}>
             <Text style={styles.label}>📡 ESP IP Address:</Text>
@@ -148,6 +213,7 @@ const App: React.FC = () => {
               onChangeText={setEspIP}
               placeholder="192.168.1.100"
               autoCapitalize="none"
+              keyboardType="default"
             />
           </View>
 
@@ -163,7 +229,7 @@ const App: React.FC = () => {
           </View>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>🔐 Password:</Text>
+            <Text style={styles.label}>🔐 Password (Optional):</Text>
             <TextInput
               style={styles.input}
               value={password}
@@ -185,64 +251,98 @@ const App: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📁 Firmware File</Text>
+          <Text style={styles.sectionTitle}>📁 Firmware File Selection</Text>
           
           <TouchableOpacity style={styles.button} onPress={selectFile}>
             <Text style={styles.buttonText}>
-              {selectedFile ? `📄 ${selectedFile.name}` : '📁 Select .bin File'}
+              {selectedFile ? `📄 ${selectedFile.name}` : '📁 Select .bin Firmware File'}
             </Text>
           </TouchableOpacity>
 
           {selectedFile && (
-            <View style={styles.fileInfo}>
-              <Text style={styles.fileInfoText}>📄 {selectedFile.name}</Text>
-              <Text style={styles.fileInfoText}>📏 {Math.round(selectedFile.size / 1024)} KB</Text>
-            </View>
+            <TouchableOpacity style={styles.fileInfo} onPress={showFileInfo}>
+              <Text style={styles.fileInfoText}>📄 File: {selectedFile.name}</Text>
+              <Text style={styles.fileInfoText}>
+                📏 Size: {Math.round(selectedFile.size / 1024)} KB
+              </Text>
+              <Text style={styles.fileInfoText}>📋 Type: {selectedFile.type}</Text>
+              <Text style={styles.fileInfoTextSmall}>
+                📍 {selectedFile.uri.length > 50 ? 
+                  `...${selectedFile.uri.slice(-47)}` : 
+                  selectedFile.uri}
+              </Text>
+              <Text style={styles.tapToViewText}>Tap for full details</Text>
+            </TouchableOpacity>
           )}
         </View>
 
         {uploadProgress > 0 && (
           <View style={styles.progressContainer}>
             <Text style={styles.progressText}>
-              Progress: {Math.round(uploadProgress * 100)}%
+              📊 Upload Progress: {Math.round(uploadProgress * 100)}%
             </Text>
             <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: `${uploadProgress * 100}%` }]} />
+              <View 
+                style={[styles.progressFill, { width: `${uploadProgress * 100}%` }]} 
+              />
             </View>
+            <Text style={styles.progressSubtext}>
+              {uploadProgress < 1 ? 
+                'Uploading firmware to ESP device...' : 
+                'Upload complete! ESP rebooting with new firmware...'}
+            </Text>
           </View>
         )}
 
         <TouchableOpacity 
-          style={[styles.button, styles.uploadButton, isUploading && styles.disabledButton]}
+          style={[
+            styles.button, 
+            styles.uploadButton, 
+            isUploading && styles.disabledButton
+          ]}
           onPress={startUpload}
           disabled={isUploading}
         >
           <Text style={styles.buttonText}>
-            {isUploading ? '⏳ Uploading...' : '🚀 Upload Firmware'}
+            {isUploading ? '⏳ Uploading Firmware...' : '🚀 Upload Firmware'}
           </Text>
         </TouchableOpacity>
 
         {logs.length > 0 && (
           <View style={styles.logContainer}>
             <View style={styles.logHeader}>
-              <Text style={styles.logTitle}>📋 Logs</Text>
+              <Text style={styles.logTitle}>📋 Process Logs</Text>
               <TouchableOpacity onPress={clearLogs} style={styles.clearButton}>
                 <Text style={styles.clearButtonText}>🧹 Clear</Text>
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.logScrollView} nestedScrollEnabled>
-              {logs.slice(-15).map((log, index) => (
-                <Text key={index} style={styles.logText}>{log}</Text>
+              {logs.map((log, index) => (
+                <Text key={index} style={styles.logText}>
+                  {log}
+                </Text>
               ))}
             </ScrollView>
           </View>
         )}
 
         <View style={styles.infoContainer}>
-          <Text style={styles.infoTitle}>ℹ️ Information</Text>
-          <Text style={styles.infoText}>• Compatible with ArduinoOTA library</Text>
-          <Text style={styles.infoText}>• Uses UDP + TCP protocol (espota.py)</Text>
-          <Text style={styles.infoText}>• Platform: {Platform.OS}</Text>
+          <Text style={styles.infoTitle}>ℹ️ How ESP OTA Works</Text>
+          <Text style={styles.infoText}>
+            • Implements espota.py protocol for ESP32/ESP8266
+          </Text>
+          <Text style={styles.infoText}>
+            • Uses UDP for invitation, TCP for file transfer
+          </Text>
+          <Text style={styles.infoText}>
+            • Compatible with ArduinoOTA library
+          </Text>
+          <Text style={styles.infoText}>
+            • Supports password authentication
+          </Text>
+          <Text style={styles.infoText}>
+            • Platform: {Platform.OS} {Platform.Version}
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -250,36 +350,227 @@ const App: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  scrollView: { flex: 1, padding: 20 },
-  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 5, color: '#333' },
-  subtitle: { fontSize: 16, textAlign: 'center', marginBottom: 30, color: '#666', fontStyle: 'italic' },
-  section: { backgroundColor: 'white', borderRadius: 12, padding: 20, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#333' },
-  inputContainer: { marginBottom: 15 },
-  label: { fontSize: 16, marginBottom: 8, color: '#333', fontWeight: '600' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 15, fontSize: 16, backgroundColor: '#f9f9f9' },
-  button: { backgroundColor: '#007AFF', padding: 18, borderRadius: 10, alignItems: 'center', marginBottom: 10 },
-  testButton: { backgroundColor: '#FF9500', padding: 15, borderRadius: 10, alignItems: 'center' },
-  uploadButton: { backgroundColor: '#34C759', marginTop: 10 },
-  disabledButton: { backgroundColor: '#ccc' },
-  buttonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  fileInfo: { backgroundColor: '#f0f8ff', padding: 15, borderRadius: 8, marginTop: 10 },
-  fileInfoText: { fontSize: 14, color: '#333', marginBottom: 5 },
-  progressContainer: { backgroundColor: 'white', padding: 20, borderRadius: 12, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  progressText: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 10, textAlign: 'center' },
-  progressBar: { height: 15, backgroundColor: '#e0e0e0', borderRadius: 8 },
-  progressFill: { height: '100%', backgroundColor: '#34C759', borderRadius: 8 },
-  logContainer: { backgroundColor: '#1a1a1a', borderRadius: 12, padding: 15, marginBottom: 20 },
-  logHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  logTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  clearButton: { backgroundColor: '#FF3B30', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
-  clearButtonText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
-  logScrollView: { maxHeight: 200 },
-  logText: { color: '#00ff00', fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', marginBottom: 3 },
-  infoContainer: { backgroundColor: '#E3F2FD', padding: 20, borderRadius: 12, marginBottom: 20 },
-  infoTitle: { fontSize: 16, fontWeight: 'bold', color: '#1976D2', marginBottom: 10 },
-  infoText: { fontSize: 14, color: '#1976D2', lineHeight: 20, marginBottom: 5 },
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  scrollView: {
+    flex: 1,
+    padding: 20,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 5,
+    color: '#333',
+  },
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 30,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  section: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  infoButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoButtonText: {
+    color: 'white',
+    fontSize: 16,
+  },
+  inputContainer: {
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: 16,
+    marginBottom: 8,
+    color: '#333',
+    fontWeight: '600',
+  },
+  input: {
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    padding: 15,
+    fontSize: 16,
+    backgroundColor: '#f9f9f9',
+    color: '#333',
+  },
+  button: {
+    backgroundColor: '#007AFF',
+    padding: 18,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  testButton: {
+    backgroundColor: '#FF9500',
+    padding: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  uploadButton: {
+    backgroundColor: '#34C759',
+    marginTop: 10,
+  },
+  disabledButton: {
+    backgroundColor: '#ccc',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  fileInfo: {
+    backgroundColor: '#f0f8ff',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF',
+  },
+  fileInfoText: {
+    fontSize: 14,
+    color: '#333',
+    marginBottom: 5,
+  },
+  fileInfoTextSmall: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 5,
+  },
+  tapToViewText: {
+    fontSize: 12,
+    color: '#007AFF',
+    fontStyle: 'italic',
+    marginTop: 5,
+  },
+  progressContainer: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 15,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  progressText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  progressSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  progressBar: {
+    height: 20,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#34C759',
+    borderRadius: 10,
+  },
+  logContainer: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 20,
+    maxHeight: 300,
+  },
+  logHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  logTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  clearButton: {
+    backgroundColor: '#FF3B30',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  clearButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  logScrollView: {
+    maxHeight: 200,
+  },
+  logText: {
+    color: '#00ff00',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginBottom: 3,
+  },
+  infoContainer: {
+    backgroundColor: '#E3F2FD',
+    padding: 20,
+    borderRadius: 15,
+    marginBottom: 20,
+  },
+  infoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1976D2',
+    marginBottom: 10,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#1976D2',
+    lineHeight: 20,
+    marginBottom: 5,
+  },
 });
 
 export default App;
