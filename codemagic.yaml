@@ -6,7 +6,7 @@ workflows:
     working_directory: ESPOTAUpdater
     environment:
       vars:
-        XCODE_WORKSPACE: "ios/ESPOTAUpdater.xcworkspace"  # ios/ prefix eklendi
+        XCODE_WORKSPACE: "ios/ESPOTAUpdater.xcworkspace"
         XCODE_SCHEME: "ESPOTAUpdater"
         BUNDLE_ID: "com.ismailozturk.espotaupdater"
       node: 18.17.0
@@ -19,35 +19,11 @@ workflows:
       - name: Install CocoaPods dependencies
         script: |
           cd ios && pod install
-      - name: Set up iOS project
-        script: |
-          npx react-native run-ios --simulator="iPhone 15 Pro" --no-packager || true
       - name: Build iOS
         script: |
           xcode-project build-ipa \
             --workspace "ios/ESPOTAUpdater.xcworkspace" \
-            --scheme "$XCODE_SCHEME"
+            --scheme "$XCODE_SCHEME" \
+            --export-options-plist "export_options.plist"
     artifacts:
       - build/ios/ipa/*.ipa
-
-  android-workflow:
-    name: Android ESP OTA Updater
-    instance_type: linux_x2
-    max_build_duration: 60
-    working_directory: ESPOTAUpdater
-    environment:
-      vars:
-        PACKAGE_NAME: "com.ismailozturk.espotaupdater"
-      node: 18.17.0
-      java: 11
-    scripts:
-      - name: Install npm dependencies
-        script: |
-          npm install
-      - name: Build Android APK
-        script: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
-    artifacts:
-      - android/app/build/outputs/**/*.apk
