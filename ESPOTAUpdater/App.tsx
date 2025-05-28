@@ -10,7 +10,7 @@ import {
   SafeAreaView,
   Platform,
 } from 'react-native';
-import DocumentPicker, { DocumentPickerResponse } from 'react-native-document-picker';
+import { pick, isErrorWithCode, errorCodes } from '@react-native-documents/picker';
 import ESPOTAService from './src/services/ESPOTAService';
 
 interface SelectedFile {
@@ -35,47 +35,56 @@ const App: React.FC = () => {
     setLogs(prev => [...prev, `[${timestamp}] ${message}`]);
   };
 
-  const selectFile = async (): Promise<void> => {
-    try {
-      const result = await DocumentPicker.pick({
-        type: [DocumentPicker.types.allFiles],
-        allowMultiSelection: false,
-      });
-      
-      const selectedFile = result[0];
-      
-      // Null kontrolü ve optional chaining
-      if (!selectedFile || !selectedFile.name || !selectedFile.size) {
-        Alert.alert('Error', 'Invalid file selected');
-        addLog('❌ Invalid file selected');
-        return;
-      }
-      
-      // .bin dosyası kontrolü
-      if (selectedFile.name.endsWith('.bin')) {
-        const fileData: SelectedFile = {
-          uri: selectedFile.uri,
-          name: selectedFile.name,
-          size: selectedFile.size,
-          type: selectedFile.type || 'application/octet-stream'
-        };
-        
-        setSelectedFile(fileData);
-        addLog(`✅ File selected: ${selectedFile.name} (${Math.round(selectedFile.size / 1024)} KB)`);
-      } else {
-        Alert.alert('Error', 'Please select a .bin firmware file');
-        addLog('❌ Invalid file type selected - .bin required');
-      }
-    } catch (err) {
-      if (DocumentPicker.isCancel(err)) {
-        addLog('📁 File selection cancelled');
-      } else {
-        console.error('File picker error:', err);
-        Alert.alert('Error', 'Could not select file');
-        addLog(`❌ File picker error: ${err}`);
-      }
+ const selectFile = async (): Promise<void> => {
+  try {
+    const result = await pick({
+      allowMultiSelection: false,
+    });
+    
+    const selectedFile = result[0];
+    
+    if (!selectedFile || !selectedFile.name || !selectedFile.size) {
+      Alert.alert('Error', 'Invalid file selected');
+      addLog('❌ Invalid file selected');
+      return;
     }
-  };
+    
+    if (selectedFile.name.endsWith('.bin')) {
+      const fileData: SelectedFile = {
+        uri: selectedFile.uri,
+        name: selectedFile.name,
+        size: selectedFile.size,
+        type: selectedFile.type || 'application/octet-stream'
+      };
+      
+      setSelectedFile(fileData);
+      addLog(`✅ File selected: ${selectedFile.name} (${Math.round(selectedFile.size / 1024)} KB)`);
+    } else {
+      Alert.alert('Error', 'Please select a .bin firmware file');
+      addLog('❌ Invalid file type selected - .bin required');
+    }
+  } catch (err) {
+    if (isErrorWithCode(err)) {
+      switch (err.code) {
+        case errorCodes.OPERATION_CANCELED:
+          addLog('📁 File selection cancelled');
+          break;
+        case errorCodes.UNABLE_TO_OPEN_FILE_TYPE:
+          Alert.alert('Error', 'Unable to open file type');
+          addLog('❌ Unable to open file type');
+          break;
+        default:
+          console.error('File picker error:', err);
+          Alert.alert('Error', 'Could not select file');
+          addLog(`❌ File picker error: ${err.message}`);
+      }
+    } else {
+      console.error('Unknown error:', err);
+      Alert.alert('Error', 'Unknown error occurred');
+      addLog(`❌ Unknown error: ${err}`);
+    }
+  }
+};
 
   const testConnection = async (): Promise<void> => {
     if (!espIP) {
