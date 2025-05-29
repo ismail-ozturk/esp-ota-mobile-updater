@@ -22,6 +22,8 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+    <string>This app needs local network access to communicate with ESP devices for firmware updates</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -34,6 +36,13 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+    <!-- Document picker permission -->
+    <key>NSDocumentPickerUsageDescription</key>
+    <string>This app needs access to documents to select firmware files</string>
+    
+    <!-- File access permission -->
+    <key>NSFileProviderUsageDescription</key>
+    <string>This app needs file access to read firmware files</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
