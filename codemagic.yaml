@@ -1,6 +1,6 @@
 workflows:
-  ios-simulator:
-    name: iOS Simulator Build
+  ios-workflow:
+    name: iOS ESP OTA Build
     instance_type: mac_mini_m1
     max_build_duration: 60
     working_directory: ESPOTAUpdater
@@ -8,26 +8,59 @@ workflows:
       vars:
         XCODE_WORKSPACE: "ios/ESPOTAUpdater.xcworkspace"
         XCODE_SCHEME: "ESPOTAUpdater"
+        BUNDLE_ID: "com.yourname.espotaupdater"
       node: 18.17.0
       xcode: latest
       cocoapods: default
     scripts:
       - name: Install npm dependencies
         script: |
-          npm install
+          npm ci
       - name: Install CocoaPods dependencies
         script: |
           cd ios && pod install
-      - name: Build for iOS Simulator
+      - name: Build iOS for Simulator
         script: |
           xcodebuild build \
-            -workspace "ios/ESPOTAUpdater.xcworkspace" \
+            -workspace "$XCODE_WORKSPACE" \
             -scheme "$XCODE_SCHEME" \
             -sdk iphonesimulator \
             -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=18.0' \
             -configuration Debug \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_REQUIRED=NO
     artifacts:
       - /tmp/xcodebuild_logs/*.log
+      - ios/build/Build/Products/Debug-iphonesimulator/*.app
+
+  android-workflow:
+    name: Android ESP OTA Build
+    instance_type: linux_x2
+    max_build_duration: 60
+    working_directory: ESPOTAUpdater
+    environment:
+      vars:
+        PACKAGE_NAME: "com.yourname.espotaupdater"
+      node: 18.17.0
+      java: 17
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Create React Native bundle
+        script: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+      - name: Build Android APK
+        script: |
+          cd android
+          chmod +x gradlew
+          ./gradlew clean
+          ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/**/*.apk
